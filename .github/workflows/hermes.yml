@@ -120,12 +120,13 @@ jobs:
 
       - name: Diagnostics
         run: |
+          hermes doctor --fix || true
           hermes doctor || true
           hermes status --all | head -60 || true
 
       - name: Bootstrap autonomous work
         run: |
-          hermes -z "You are running 24/7 from a GitHub Actions runner. Inspect your environment, memory, skills, and cron jobs. If no scheduled cron jobs exist, create 2-3 useful ones (e.g. a morning briefing and a weekly audit) delivered to your home channel, and run a quick memory check. Reply with a short summary of what you set up." --max-turns 60 || true
+          hermes -z "You are running 24/7 from a GitHub Actions runner. Inspect your environment, memory, skills, and cron jobs. If no scheduled cron jobs exist, create 2-3 useful ones (e.g. a morning briefing and a weekly audit) delivered to your home channel, and run a quick memory check. Reply with a short summary of what you set up." || true
 
       - name: Run gateway
         run: |
