@@ -131,9 +131,10 @@ jobs:
 
       - name: Run gateway
         run: |
+          trap 'bash scripts/commit-state.sh "hermes: emergency save on cancel" || true' INT TERM
           (
             while [ ! -f "$HOME/.hermes/stop-heartbeat" ]; do
-              sleep 1800
+              sleep 600
               bash scripts/commit-state.sh "hermes: heartbeat $(date -u +%Y-%m-%dT%H:%M:%SZ)" || true
             done
           ) &
