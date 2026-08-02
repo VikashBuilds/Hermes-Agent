@@ -95,11 +95,25 @@ jobs:
           if [ -n "$HERMES_PROVIDER" ]; then
             hermes config set model.provider "$HERMES_PROVIDER"
             echo "provider -> $HERMES_PROVIDER"
+            case "$HERMES_PROVIDER" in
+              opencode-zen) base_url="https://opencode.ai/zen/v1" ;;
+              openrouter)   base_url="https://openrouter.ai/api/v1" ;;
+              gemini)       base_url="https://generativelanguage.googleapis.com/v1beta/openai" ;;
+              *)            base_url="" ;;
+            esac
+            if [ -n "$base_url" ]; then
+              hermes config set model.base_url "$base_url"
+              echo "base_url -> $base_url"
+            fi
           fi
           if [ -n "$HERMES_MODEL" ]; then
             hermes config set model.default "$HERMES_MODEL"
             echo "model -> $HERMES_MODEL"
           fi
+          for task in title_generation vision web_extract compression; do
+            hermes config set "auxiliary.$task.provider" main || true
+          done
+          echo "auxiliary tasks pinned to main provider"
         env:
           HERMES_PROVIDER: ${{ vars.HERMES_PROVIDER }}
           HERMES_MODEL: ${{ vars.HERMES_MODEL }}
