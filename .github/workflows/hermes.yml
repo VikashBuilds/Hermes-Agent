@@ -163,14 +163,7 @@ jobs:
           gh release create "$tag" "$archive" \
             --repo "${{ github.repository }}" \
             --title "Hermes state snapshot ${{ github.run_id }}" \
-            --notes "Automatic snapshot of ~/.hermes (memory, sessions, skills, cron)" || true
-          retention="${RELEASE_RETENTION:-7}"
-          gh release list --repo "${{ github.repository }}" \
-            --json tagName,createdAt \
-            --jq "sort_by(.createdAt) | .[0:-${retention}] | .[].tagName" | while read -r t; do
-              gh release delete "$t" --repo "${{ github.repository }}" --yes || true
-              echo "Deleted old snapshot $t"
-          done
+            --notes "Automatic snapshot of ~/.hermes (memory, sessions, skills, cron) - kept forever" || true
 
       - name: Chain next run
         if: always()
