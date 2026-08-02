@@ -1,0 +1,123 @@
+{
+  "jobs": [
+    {
+      "id": "fdf11ab38dba",
+      "name": "morning-briefing",
+      "prompt": "Morning briefing. Produce a concise daily briefing (max ~30 lines, plain text, no markdown tables). Cover: (1) Repo status: cd /home/runner/work/Hermes-Agent/Hermes-Agent and report git status (clean/dirty, current branch) and git log --oneline -5; (2) Cron health: run 'hermes cron list' and inspect ~/.hermes/cron/output/ for runs in the last 24h, flag any failures; (3) Memory & skills: size of ~/.hermes/memories/ and skill count; (4) System: df -h / and uptime. End with 2-3 suggested priorities for the day.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "provider_snapshot": "opencode-zen",
+      "model_snapshot": "deepseek-v4-flash-free",
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 8 * * *",
+        "display": "0 8 * * *"
+      },
+      "schedule_display": "0 8 * * *",
+      "repeat": {
+        "times": null,
+        "completed": 1
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-08-02T15:39:50.758463+00:00",
+      "next_run_at": "2026-08-03T08:00:00+00:00",
+      "last_run_at": "2026-08-02T15:40:34.095751+00:00",
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": null,
+      "enabled_toolsets": null,
+      "workdir": null,
+      "fire_claim": null
+    },
+    {
+      "id": "a933be07c9c5",
+      "name": "weekly-audit",
+      "prompt": "Weekly audit. Produce a structured audit report (plain text, scannable). Cover: (1) Cron jobs: 'hermes cron list' with schedules, and run history from ~/.hermes/cron/output/ \u2014 flag failed or silent jobs; (2) Skills: 'hermes curator status' \u2014 count agent-created skills, list stale/archived ones; (3) Memory: inspect ~/.hermes/memories/ \u2014 size and entries, note anything redundant; (4) Repo health: git -C /home/runner/work/Hermes-Agent/Hermes-Agent status, branch vs origin/main, commits in the last 7 days, grep -r count of TODO/FIXME; (5) System: disk usage and uptime. Flag anything needing action and list 3 recommended actions for the week.",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "provider_snapshot": "opencode-zen",
+      "model_snapshot": "deepseek-v4-flash-free",
+      "base_url": null,
+      "script": null,
+      "no_agent": false,
+      "context_from": null,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * 1",
+        "display": "0 9 * * 1"
+      },
+      "schedule_display": "0 9 * * 1",
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-08-02T15:39:51.361195+00:00",
+      "next_run_at": "2026-08-03T09:00:00+00:00",
+      "last_run_at": null,
+      "last_status": null,
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": null,
+      "enabled_toolsets": null,
+      "workdir": null
+    },
+    {
+      "id": "b32385324a1e",
+      "name": "disk-watchdog",
+      "prompt": "",
+      "skills": [],
+      "skill": null,
+      "model": null,
+      "provider": null,
+      "provider_snapshot": null,
+      "model_snapshot": null,
+      "base_url": null,
+      "script": "disk_watchdog.sh",
+      "no_agent": true,
+      "context_from": null,
+      "schedule": {
+        "kind": "interval",
+        "minutes": 360,
+        "display": "every 360m"
+      },
+      "schedule_display": "every 360m",
+      "repeat": {
+        "times": null,
+        "completed": 0
+      },
+      "enabled": true,
+      "state": "scheduled",
+      "paused_at": null,
+      "paused_reason": null,
+      "created_at": "2026-08-02T15:39:51.950282+00:00",
+      "next_run_at": "2026-08-02T21:39:51.951953+00:00",
+      "last_run_at": null,
+      "last_status": null,
+      "last_error": null,
+      "last_delivery_error": null,
+      "deliver": "local",
+      "origin": null,
+      "enabled_toolsets": null,
+      "workdir": null
+    }
+  ],
+  "updated_at": "2026-08-02T15:40:34.096249+00:00"
+}
