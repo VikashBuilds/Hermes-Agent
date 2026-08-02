@@ -26,13 +26,33 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Restore Hermes state
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
         run: |
-          if [ -d "$HERMES_STATE_DIR" ]; then
+          restore() {
             mkdir -p "$HOME/.hermes"
-            rsync -a --exclude 'hermes-agent' "$HERMES_STATE_DIR/" "$HOME/.hermes/"
-            echo "State restored: $(du -sh "$HOME/.hermes" | cut -f1)"
+            rsync -a --exclude 'hermes-agent' "$1/" "$HOME/.hermes/"
+            echo "State restored from $1: $(du -sh "$HOME/.hermes" | cut -f1)"
+          }
+          if [ -d "$HERMES_STATE_DIR" ] && [ -n "$(ls -A "$HERMES_STATE_DIR")" ]; then
+            restore "$HERMES_STATE_DIR"
           else
-            echo "No committed state found - first run"
+            latest=$(gh release list --repo "${{ github.repository }}" --limit 1 \
+              --json tagName --jq '.[0].tagName' 2>/dev/null || true)
+            if [ -n "$latest" ]; then
+              echo "Git state empty - restoring from release $latest"
+              gh release download "$latest" --repo "${{ github.repository }}" \
+                --pattern '*.tar.gz' --clobber --dir /tmp || true
+              archive=$(ls /tmp/hermes-state-*.tar.gz 2>/dev/null | head -1 || true)
+              if [ -n "$archive" ]; then
+                tar -xzf "$archive" -C . "$HERMES_STATE_DIR"
+                restore "$HERMES_STATE_DIR"
+              else
+                echo "No usable release archive found - first run"
+              fi
+            else
+              echo "No committed state found - first run"
+            fi
           fi
 
       - name: Install Hermes
@@ -153,6 +173,8 @@ jobs:
 
       - name: Publish release snapshot
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
         run: |
           if [ ! -d "$HERMES_STATE_DIR" ]; then
             echo "No state to snapshot"
