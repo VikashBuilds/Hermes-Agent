@@ -131,41 +131,46 @@ jobs:
 
       - name: Run gateway
         run: |
-          timeout --signal=TERM --kill-after=60 19500 hermes gateway run
-          code=$?
-          echo "Gateway exited with code $code"
+          (
+            while [ ! -f "$HOME/.hermes/stop-heartbeat" ]; do
+              sleep 1800
+              bash scripts/commit-state.sh "hermes: heartbeat $(date -u +%Y-%m-%dT%H:%M:%SZ)" || true
+            done
+          ) &
+          HB_PID=$!
+          timeout --signal=TERM --kill-after=60 19500 hermes gateway run || code=$?
+          echo "Gateway exited with code ${code:-0}"
+          touch "$HOME/.hermes/stop-heartbeat"
+          wait "$HB_PID" || true
           exit 0
 
-      - name: Save state
-        run: |
-          mkdir -p "$HERMES_STATE_DIR"
-          rsync -a --delete \
-            --exclude 'hermes-agent' \
-            --exclude '.env' \
-            --exclude '.env.example' \
-            --exclude 'auth' \
-            --exclude 'whatsapp' \
-            --exclude 'bin' \
-            --exclude 'logs' \
-            --exclude 'checkpoints' \
-            --exclude 'venvs' \
-            --exclude '*.pyc' \
-            "$HOME/.hermes/" "$HERMES_STATE_DIR/"
-          printf '.env\nauth/\nwhatsapp/\n' > "$HERMES_STATE_DIR/.gitignore"
-          echo "State saved: $(du -sh "$HERMES_STATE_DIR" | cut -f1)"
-
-      - name: Commit state
+      - name: Save and commit state
         if: always()
         run: |
-          git config user.name "hermes-bot"
-          git config user.email "hermes-bot@users.noreply.github.com"
-          git add "$HERMES_STATE_DIR"
-          if git diff --cached --quiet; then
-            echo "No state changes"
-          else
-            git commit -m "hermes: sync state $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            git push
+          bash scripts/commit-state.sh "hermes: sync state $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "State size: $(du -sh "$HERMES_STATE_DIR" | cut -f1)"
+
+      - name: Publish release snapshot
+        if: always()
+        run: |
+          if [ ! -d "$HERMES_STATE_DIR" ]; then
+            echo "No state to snapshot"
+            exit 0
           fi
+          tag="hermes-state-${{ github.run_id }}"
+          archive="/tmp/hermes-state-${{ github.run_id }}.tar.gz"
+          tar -czf "$archive" -C . "$HERMES_STATE_DIR"
+          gh release create "$tag" "$archive" \
+            --repo "${{ github.repository }}" \
+            --title "Hermes state snapshot ${{ github.run_id }}" \
+            --notes "Automatic snapshot of ~/.hermes (memory, sessions, skills, cron)" || true
+          retention="${RELEASE_RETENTION:-7}"
+          gh release list --repo "${{ github.repository }}" \
+            --json tagName,createdAt \
+            --jq "sort_by(.createdAt) | .[0:-${retention}] | .[].tagName" | while read -r t; do
+              gh release delete "$t" --repo "${{ github.repository }}" --yes || true
+              echo "Deleted old snapshot $t"
+          done
 
       - name: Chain next run
         if: always()
