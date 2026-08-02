@@ -113,6 +113,7 @@ jobs:
           for task in title_generation vision web_extract compression; do
             hermes config set "auxiliary.$task.provider" main || true
           done
+          hermes config set auxiliary.title_generation.enabled false || true
           echo "auxiliary tasks pinned to main provider"
         env:
           HERMES_PROVIDER: ${{ vars.HERMES_PROVIDER }}
