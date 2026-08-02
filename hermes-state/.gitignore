@@ -1,3 +1,10 @@
 .env
+.env.example
 auth/
+auth.json
+auth.lock
 whatsapp/
+gateway.pid
+gateway.lock
+stop-heartbeat
+ticker_heartbeat
