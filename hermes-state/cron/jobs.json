@@ -101,23 +101,24 @@
       "schedule_display": "every 360m",
       "repeat": {
         "times": null,
-        "completed": 0
+        "completed": 1
       },
       "enabled": true,
       "state": "scheduled",
       "paused_at": null,
       "paused_reason": null,
       "created_at": "2026-08-02T15:39:51.950282+00:00",
-      "next_run_at": "2026-08-02T21:39:51.951953+00:00",
-      "last_run_at": null,
-      "last_status": null,
+      "next_run_at": "2026-08-03T03:40:42.896694+00:00",
+      "last_run_at": "2026-08-02T21:40:42.896694+00:00",
+      "last_status": "ok",
       "last_error": null,
       "last_delivery_error": null,
       "deliver": "local",
       "origin": null,
       "enabled_toolsets": null,
-      "workdir": null
+      "workdir": null,
+      "fire_claim": null
     }
   ],
-  "updated_at": "2026-08-02T15:40:34.096249+00:00"
+  "updated_at": "2026-08-02T21:40:42.896944+00:00"
 }
