@@ -1,0 +1,150 @@
+name: Hermes Agent 24/7
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+
+concurrency:
+  group: hermes-agent
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: write
+
+env:
+  HERMES_STATE_DIR: hermes-state
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore Hermes state
+        run: |
+          if [ -d "$HERMES_STATE_DIR" ]; then
+            mkdir -p "$HOME/.hermes"
+            rsync -a --exclude 'hermes-agent' "$HERMES_STATE_DIR/" "$HOME/.hermes/"
+            echo "State restored: $(du -sh "$HOME/.hermes" | cut -f1)"
+          else
+            echo "No committed state found - first run"
+          fi
+
+      - name: Install Hermes
+        run: |
+          curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+          {
+            echo "PATH=$HOME/.hermes/bin:$HOME/.local/bin:$PATH"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify install
+        run: |
+          export PATH="$HOME/.hermes/bin:$HOME/.local/bin:$PATH"
+          command -v hermes || { echo "hermes not on PATH after install"; exit 1; }
+          hermes --version
+
+      - name: Write credentials
+        run: |
+          mkdir -p "$HOME/.hermes"
+          env_file="$HOME/.hermes/.env"
+          : > "$env_file"
+          for var in \
+            OPENCODE_ZEN_API_KEY OPENROUTER_API_KEY ANTHROPIC_API_KEY GOOGLE_API_KEY GEMINI_API_KEY \
+            NOUS_API_KEY FIREWORKS_API_KEY KIMI_API_KEY HF_TOKEN DEEPINFRA_API_KEY \
+            EXA_API_KEY PARALLEL_API_KEY FIRECRAWL_API_KEY FAL_KEY HONCHO_API_KEY \
+            TELEGRAM_BOT_TOKEN TELEGRAM_ALLOWED_USERS TELEGRAM_HOME_CHANNEL \
+            TELEGRAM_CRON_THREAD_ID SLACK_BOT_TOKEN SLACK_APP_TOKEN SLACK_ALLOWED_USERS; do
+            val="${!var}"
+            if [ -n "$val" ]; then
+              printf '%s=%s\n' "$var" "$val" >> "$env_file"
+            fi
+          done
+          chmod 600 "$env_file"
+          echo ".env written with $(wc -l < "$env_file") keys"
+
+      - name: Apply config overrides
+        run: |
+          if [ -n "$HERMES_PROVIDER" ]; then
+            hermes config set model.provider "$HERMES_PROVIDER"
+            echo "provider -> $HERMES_PROVIDER"
+          fi
+          if [ -n "$HERMES_MODEL" ]; then
+            hermes config set model.default "$HERMES_MODEL"
+            echo "model -> $HERMES_MODEL"
+          fi
+        env:
+          HERMES_PROVIDER: ${{ vars.HERMES_PROVIDER }}
+          HERMES_MODEL: ${{ vars.HERMES_MODEL }}
+
+      - name: Diagnostics
+        run: |
+          hermes doctor || true
+          hermes status --all | head -60 || true
+
+      - name: Bootstrap autonomous work
+        run: |
+          hermes -z "You are running 24/7 from a GitHub Actions runner. Inspect your environment, memory, skills, and cron jobs. If no scheduled cron jobs exist, create 2-3 useful ones (e.g. a morning briefing and a weekly audit) delivered to your home channel, and run a quick memory check. Reply with a short summary of what you set up." --max-turns 60 || true
+
+      - name: Run gateway
+        run: |
+          timeout --signal=TERM --kill-after=60 19500 hermes gateway run
+          code=$?
+          echo "Gateway exited with code $code"
+          exit 0
+
+      - name: Save state
+        run: |
+          mkdir -p "$HERMES_STATE_DIR"
+          rsync -a --delete \
+            --exclude 'hermes-agent' \
+            --exclude '.env' \
+            --exclude '.env.example' \
+            --exclude 'auth' \
+            --exclude 'whatsapp' \
+            --exclude 'bin' \
+            --exclude 'logs' \
+            --exclude 'checkpoints' \
+            --exclude 'venvs' \
+            --exclude '*.pyc' \
+            "$HOME/.hermes/" "$HERMES_STATE_DIR/"
+          printf '.env\nauth/\nwhatsapp/\n' > "$HERMES_STATE_DIR/.gitignore"
+          echo "State saved: $(du -sh "$HERMES_STATE_DIR" | cut -f1)"
+
+      - name: Commit state
+        if: always()
+        run: |
+          git config user.name "hermes-bot"
+          git config user.email "hermes-bot@users.noreply.github.com"
+          git add "$HERMES_STATE_DIR"
+          if git diff --cached --quiet; then
+            echo "No state changes"
+          else
+            git commit -m "hermes: sync state $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+          fi
+
+      - name: Chain next run
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+        run: |
+          pending=$(gh run list --workflow "${{ github.workflow }}" --repo "${{ github.repository }}" \
+            --limit 5 --json databaseId,status \
+            --jq '[.[] | select(.databaseId != '"${{ github.run_id }}"' and (.status == "in_progress" or .status == "queued"))] | length')
+          if [ "${pending:-0}" -gt 0 ]; then
+            echo "Another run is already queued/running - skipping chain"
+            exit 0
+          fi
+          for attempt in 1 2 3 4 5; do
+            if gh workflow run "${{ github.workflow }}" --repo "${{ github.repository }}"; then
+              echo "Chained next run (attempt $attempt)"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Chain failed after 5 attempts - the 6-hour cron schedule will pick it up"
