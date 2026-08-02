@@ -22,6 +22,20 @@ jobs:
     timeout-minutes: 350
 
     steps:
+      - name: Guard - skip if another run is active
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+        run: |
+          active=$(gh run list --workflow "${{ github.workflow }}" --repo "${{ github.repository }}" \
+            --limit 10 --json databaseId,status \
+            --jq '[.[] | select(.databaseId != '"${{ github.run_id }}"' and (.status == "in_progress" or .status == "queued" or .status == "pending" or .status == "waiting"))] | length')
+          if [ "${active:-0}" -gt 0 ]; then
+            echo "Another run is active - this run will do nothing"
+            touch .guard-skip
+          else
+            echo "No active sibling runs - proceeding"
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -29,6 +43,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
         run: |
+          [ ! -f .guard-skip ] || exit 0
           restore() {
             mkdir -p "$HOME/.hermes"
             rsync -a --exclude 'hermes-agent' "$1/" "$HOME/.hermes/"
@@ -57,6 +72,7 @@ jobs:
 
       - name: Install Hermes
         run: |
+          [ ! -f .guard-skip ] || exit 0
           curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
           {
             echo "PATH=$HOME/.hermes/bin:$HOME/.local/bin:$PATH"
@@ -64,6 +80,7 @@ jobs:
 
       - name: Verify install
         run: |
+          [ ! -f .guard-skip ] || exit 0
           export PATH="$HOME/.hermes/bin:$HOME/.local/bin:$PATH"
           command -v hermes || { echo "hermes not on PATH after install"; exit 1; }
           hermes --version
@@ -93,6 +110,7 @@ jobs:
           SLACK_APP_TOKEN: ${{ secrets.SLACK_APP_TOKEN }}
           SLACK_ALLOWED_USERS: ${{ secrets.SLACK_ALLOWED_USERS }}
         run: |
+          [ ! -f .guard-skip ] || exit 0
           mkdir -p "$HOME/.hermes"
           env_file="$HOME/.hermes/.env"
           : > "$env_file"
@@ -112,6 +130,7 @@ jobs:
 
       - name: Apply config overrides
         run: |
+          [ ! -f .guard-skip ] || exit 0
           if [ -n "$HERMES_PROVIDER" ]; then
             hermes config set model.provider "$HERMES_PROVIDER"
             echo "provider -> $HERMES_PROVIDER"
@@ -141,16 +160,19 @@ jobs:
 
       - name: Diagnostics
         run: |
+          [ ! -f .guard-skip ] || exit 0
           hermes doctor --fix || true
           hermes doctor || true
           hermes status --all | head -60 || true
 
       - name: Bootstrap autonomous work
         run: |
+          [ ! -f .guard-skip ] || exit 0
           hermes -z "You are running 24/7 from a GitHub Actions runner. Inspect your environment, memory, skills, and cron jobs. If no scheduled cron jobs exist, create 2-3 useful ones (e.g. a morning briefing and a weekly audit) delivered to your home channel, and run a quick memory check. Reply with a short summary of what you set up." || true
 
       - name: Run gateway
         run: |
+          [ ! -f .guard-skip ] || exit 0
           trap 'bash scripts/commit-state.sh "hermes: emergency save on cancel" || true' INT TERM
           (
             while [ ! -f "$HOME/.hermes/stop-heartbeat" ]; do
@@ -168,6 +190,7 @@ jobs:
       - name: Save and commit state
         if: always()
         run: |
+          [ ! -f .guard-skip ] || exit 0
           bash scripts/commit-state.sh "hermes: sync state $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           echo "State size: $(du -sh "$HERMES_STATE_DIR" | cut -f1)"
 
@@ -176,6 +199,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
         run: |
+          [ ! -f .guard-skip ] || exit 0
           if [ ! -d "$HERMES_STATE_DIR" ]; then
             echo "No state to snapshot"
             exit 0
@@ -193,6 +217,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
         run: |
+          [ ! -f .guard-skip ] || exit 0
           pending=$(gh run list --workflow "${{ github.workflow }}" --repo "${{ github.repository }}" \
             --limit 5 --json databaseId,status \
             --jq '[.[] | select(.databaseId != '"${{ github.run_id }}"' and (.status == "in_progress" or .status == "queued"))] | length')
