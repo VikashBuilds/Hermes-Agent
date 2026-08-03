@@ -39,36 +39,46 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Restore Hermes state
+      - name: Restore Hermes state (from latest encrypted release)
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          STATE_ENCRYPTION_KEY: ${{ secrets.STATE_ENCRYPTION_KEY }}
         run: |
           [ ! -f .guard-skip ] || exit 0
-          restore() {
-            mkdir -p "$HOME/.hermes"
-            rsync -a --exclude 'hermes-agent' "$1/" "$HOME/.hermes/"
-            echo "State restored from $1: $(du -sh "$HOME/.hermes" | cut -f1)"
-          }
-          if [ -d "$HERMES_STATE_DIR" ] && [ -n "$(ls -A "$HERMES_STATE_DIR")" ]; then
-            restore "$HERMES_STATE_DIR"
-          else
-            latest=$(gh release list --repo "${{ github.repository }}" --limit 1 \
-              --json tagName --jq '.[0].tagName' 2>/dev/null || true)
-            if [ -n "$latest" ]; then
-              echo "Git state empty - restoring from release $latest"
-              gh release download "$latest" --repo "${{ github.repository }}" \
-                --pattern '*.tar.gz' --clobber --dir /tmp || true
-              archive=$(ls /tmp/hermes-state-*.tar.gz 2>/dev/null | head -1 || true)
-              if [ -n "$archive" ]; then
-                tar -xzf "$archive" -C . "$HERMES_STATE_DIR"
-                restore "$HERMES_STATE_DIR"
+          mkdir -p "$HOME/.hermes" /tmp/restore
+          restored=0
+          tags=$(gh release list --repo "${{ github.repository }}" --limit 5 --json tagName --jq '.[].tagName' 2>/dev/null || true)
+          for tag in $tags; do
+            rm -rf /tmp/restore/*
+            ok=0
+            if gh release download "$tag" --repo "${{ github.repository }}" --pattern '*.tar.gz.enc' --clobber --dir /tmp/restore >/dev/null 2>&1; then
+              enc=$(ls /tmp/restore/*.tar.gz.enc 2>/dev/null | head -1 || true)
+              if [ -n "$enc" ] && openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -pass env:STATE_ENCRYPTION_KEY -in "$enc" -out /tmp/restore/state.tar.gz 2>/dev/null; then
+                ok=1
               else
-                echo "No usable release archive found - first run"
+                echo "  $tag: decrypt failed, trying next"
               fi
-            else
-              echo "No committed state found - first run"
             fi
-          fi
+            if [ "$ok" != "1" ]; then
+              rm -rf /tmp/restore/*
+              if gh release download "$tag" --repo "${{ github.repository }}" --pattern '*.tar.gz' --clobber --dir /tmp/restore >/dev/null 2>&1; then
+                arc=$(ls /tmp/restore/*.tar.gz 2>/dev/null | head -1 || true)
+                if [ -n "$arc" ]; then
+                  mv "$arc" /tmp/restore/state.tar.gz
+                  ok=1
+                fi
+              fi
+            fi
+            if [ "$ok" = "1" ]; then
+              if tar -xzf /tmp/restore/state.tar.gz -C . 2>/dev/null; then
+                rsync -a --exclude 'hermes-agent' "$HERMES_STATE_DIR/" "$HOME/.hermes/"
+                echo "State restored from release $tag ($(du -sh "$HOME/.hermes" | cut -f1))"
+                restored=1
+                break
+              fi
+            fi
+          done
+          [ "$restored" = "1" ] || echo "No usable release found - first run"
 
       - name: Install Hermes
         run: |
@@ -171,13 +181,16 @@ jobs:
           hermes -z "You are running 24/7 from a GitHub Actions runner. Inspect your environment, memory, skills, and cron jobs. If no scheduled cron jobs exist, create 2-3 useful ones (e.g. a morning briefing and a weekly audit) delivered to your home channel, and run a quick memory check. Reply with a short summary of what you set up." || true
 
       - name: Run gateway
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          STATE_ENCRYPTION_KEY: ${{ secrets.STATE_ENCRYPTION_KEY }}
         run: |
           [ ! -f .guard-skip ] || exit 0
-          trap 'bash scripts/commit-state.sh "hermes: emergency save on cancel" || true' INT TERM
+          trap 'bash scripts/release-state.sh "hermes: emergency save on cancel" || true' INT TERM
           (
             while [ ! -f "$HOME/.hermes/stop-heartbeat" ]; do
               sleep 600
-              bash scripts/commit-state.sh "hermes: heartbeat $(date -u +%Y-%m-%dT%H:%M:%SZ)" || true
+              bash scripts/release-state.sh "hermes: heartbeat $(date -u +%Y-%m-%dT%H:%M:%SZ)" || true
             done
           ) &
           HB_PID=$!
@@ -187,30 +200,15 @@ jobs:
           wait "$HB_PID" || true
           exit 0
 
-      - name: Save and commit state
-        if: always()
-        run: |
-          [ ! -f .guard-skip ] || exit 0
-          bash scripts/commit-state.sh "hermes: sync state $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          echo "State size: $(du -sh "$HERMES_STATE_DIR" | cut -f1)"
-
-      - name: Publish release snapshot
+      - name: Save state to encrypted release
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          STATE_ENCRYPTION_KEY: ${{ secrets.STATE_ENCRYPTION_KEY }}
         run: |
           [ ! -f .guard-skip ] || exit 0
-          if [ ! -d "$HERMES_STATE_DIR" ]; then
-            echo "No state to snapshot"
-            exit 0
-          fi
-          tag="hermes-state-${{ github.run_id }}"
-          archive="/tmp/hermes-state-${{ github.run_id }}.tar.gz"
-          tar -czf "$archive" -C . "$HERMES_STATE_DIR"
-          gh release create "$tag" "$archive" \
-            --repo "${{ github.repository }}" \
-            --title "Hermes state snapshot ${{ github.run_id }}" \
-            --notes "Automatic snapshot of ~/.hermes (memory, sessions, skills, cron) - kept forever" || true
+          bash scripts/release-state.sh "hermes: final save $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "State size: $(du -sh "$HERMES_STATE_DIR" | cut -f1)"
 
       - name: Chain next run
         if: always()
