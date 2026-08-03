@@ -3,8 +3,9 @@
 Hosts [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) on
 GitHub's free runners. Uses the chaining pattern: each run lives ~5.5 hours
 (6h job limit), then re-triggers itself via `workflow_dispatch`. State
-(memory, skills, sessions, cron jobs) is committed back to this repo, so the
-agent keeps its memories across runs forever.
+(memory, skills, sessions, cron jobs) is saved as **AES-256-encrypted GitHub
+Release snapshots** every 10 minutes and at the end of each run, so the agent
+keeps its memories across runs forever.
 
 - **Ubuntu runner:** 4 CPU / 16 GB RAM / 14 GB SSD
 - **Telegram gateway:** talk to Hermes 24/7 from your phone
@@ -15,12 +16,12 @@ agent keeps its memories across runs forever.
 ## Setup
 
 1. **Create a public GitHub repo** (public = unlimited free minutes) and push
-   this repo's contents into it. The `hermes-state/` folder gets created
-   automatically on the first run.
+   this repo's contents into it.
 2. **Add secrets** (repo Settings → Secrets and variables → Actions):
 
    | Secret | Required | Purpose |
    |---|---|---|
+   | `STATE_ENCRYPTION_KEY` | Yes | AES-256 key that encrypts every state snapshot. Generate with `openssl rand -base64 32`. **Back it up** — losing it makes the snapshots unreadable. |
    | `TELEGRAM_BOT_TOKEN` | Yes | Your bot token from [@BotFather](https://t.me/BotFather) |
    | `TELEGRAM_ALLOWED_USERS` | Yes | Comma-separated Telegram user IDs allowed to talk to the bot |
    | `TELEGRAM_HOME_CHANNEL` | No | Chat ID for cron delivery (e.g. `-1001234567890`) |
@@ -60,27 +61,34 @@ agent keeps its memories across runs forever.
 schedule (every 6h, backup)  ┐
                              ├─> run ~5.5h: install → restore state → bootstrap → gateway
 workflow_dispatch (chained)  ┘
-                                    │
-                                    ▼
-                     save ~/.hermes (minus secrets/binaries)
-                                    │
-                                    ▼
-              commit + push state  →  chain next run (if none queued)
+                                     │
+                                     ▼
+                 save ~/.hermes → AES-256 encrypt → GitHub Release
+                (every 10 min heartbeat + run end; kept forever)
+                                     │
+                                     ▼
+                        chain next run (if none queued)
 ```
 
-- `concurrency: cancel-in-progress: false` + a pre-chain check ensure runs never
-  overlap or pile up.
+- `concurrency: cancel-in-progress: false` + a guard step ensure runs never
+  overlap or pile up (cron/chain/manual triggers included).
 - If a chain fails, the 6-hour cron schedule restarts the agent as a fallback.
 - Watch liveness in the Actions tab or just send a Telegram message — if you
   get a reply, it's alive.
 
-## What gets committed (and what never does)
+## How state is stored (encrypted releases)
 
-Committed to `hermes-state/`: memory, user profile, skills, sessions DB, cron
-jobs, config.
+- Every 10 minutes (heartbeat) and at run end, `~/.hermes` is snapshotted,
+  tarballed, AES-256-CBC encrypted with `STATE_ENCRYPTION_KEY`, and published
+  as a release (`hermes-state-<run_id>-<timestamp>.tar.gz.enc`).
+- The next run restores from the **latest** release — decrypt → extract →
+  `~/.hermes`. If decrypting the newest fails, it tries older snapshots.
+- Releases are kept forever (GitHub release storage is unlimited; 2 GiB max
+  per file, 1000 assets per release — one asset each here).
+- Snapshots are unreadable without the key, even though the repo is public.
 
-Never committed: `.env` (all API keys), `auth/` (OAuth tokens), `whatsapp/`,
-`bin/`, `logs/`, the `hermes-agent` code/venv (reinstalled each run).
+**Never in snapshots:** `.env` (all API keys), `auth/` (OAuth tokens),
+`whatsapp/`, `bin/`, `logs/`, the `hermes-agent` code/venv (reinstalled each run).
 
 ## Useful commands (run in any job step or locally)
 
@@ -97,6 +105,6 @@ hermes status --all                    # health check
   ones are unlimited.
 - Runs time out at 6h by design; the gateway is killed gracefully by SIGTERM
   and the next chained run takes over.
-- First run downloads ~1 GB (Python, Node, tooling) — subsequent runs reuse the
-  committed state, only the code/venv is reinstalled.
+- First run downloads ~1 GB (Python, Node, tooling) — subsequent runs restore
+  the state from the latest release, only the code/venv is reinstalled.
 - If you ever want to stop the bot: disable the workflow.
