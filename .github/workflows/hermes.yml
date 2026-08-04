@@ -178,7 +178,7 @@ jobs:
       - name: Bootstrap autonomous work
         run: |
           [ ! -f .guard-skip ] || exit 0
-          hermes -z "You are running 24/7 from a GitHub Actions runner. Inspect your environment, memory, skills, and cron jobs. If no scheduled cron jobs exist, create 2-3 useful ones (e.g. a morning briefing and a weekly audit) delivered to your home channel, and run a quick memory check. Reply with a short summary of what you set up." || true
+          hermes -z "You are running 24/7 from a GitHub Actions runner. Inspect your environment, memory, skills, and cron jobs. If no scheduled cron jobs exist, create 2-3 useful ones (e.g. a morning briefing and a weekly audit) delivered to your home channel, and run a quick memory check. IMPORTANT: do NOT install, start, stop, restart, or manage the gateway service or any systemd units - the workflow launches the gateway immediately after you finish. Do not modify gateway_state.json. Reply with a short summary of what you set up." || true
 
       - name: Run gateway
         env:
@@ -194,9 +194,10 @@ jobs:
             done
           ) &
           HB_PID=$!
-          timeout --signal=TERM --kill-after=60 19500 hermes gateway run || code=$?
+          timeout --signal=TERM --kill-after=60 19500 hermes gateway run --replace || code=$?
           echo "Gateway exited with code ${code:-0}"
           touch "$HOME/.hermes/stop-heartbeat"
+          kill "$HB_PID" 2>/dev/null || true
           wait "$HB_PID" || true
           exit 0
 
